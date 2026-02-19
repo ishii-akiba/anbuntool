@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart按分ツール | Premium Calculation Tool</title>
     <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; blob: 'self';">
+        content="default-src 'none'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' blob:; frame-src 'none'; object-src 'none';">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -219,7 +219,6 @@
             background: rgba(255, 255, 255, 0.05);
         }
 
-        /* PDF出力時に背景や文字色を調整するための設定 */
         .pdf-export-mode {
             background: #ffffff !important;
             color: #000000 !important;
@@ -240,7 +239,7 @@
             <h2 style="margin-bottom: 24px; font-size: 1.25rem;">計算設定</h2>
 
             <div class="input-group">
-                <label>按分タイプ</label>
+                <label for="calcType">按分タイプ</label>
                 <select id="calcType">
                     <option value="daily">日割り計算 (日額 × 日数)</option>
                     <option value="monthly">月割り計算 (総額 ÷ 月数)</option>
@@ -249,27 +248,27 @@
 
             <div id="periodInputs">
                 <div class="input-group">
-                    <label>対象総額 (税込/税抜)</label>
+                    <label for="totalAmount">対象総額 (税込/税抜)</label>
                     <input type="text" id="totalAmount" placeholder="120,000" value="120,000">
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
                     <div class="input-group">
-                        <label>開始日</label>
+                        <label for="startDate">開始日</label>
                         <input type="date" id="startDate">
                     </div>
                     <div class="input-group">
-                        <label>終了日</label>
+                        <label for="endDate">終了日</label>
                         <input type="date" id="endDate">
                     </div>
                 </div>
             </div>
 
-            <button class="btn" onclick="calculate()">計算を実行</button>
+            <button class="btn" id="btnCalculate">計算を実行</button>
 
             <div class="actions">
-                <button class="btn-outline" onclick="exportCSV()">CSV</button>
-                <button class="btn-outline" onclick="exportPDF()">PDF</button>
-                <button class="btn-outline" onclick="resetForm()">リセット</button>
+                <button class="btn-outline" id="btnExportCSV">CSV</button>
+                <button class="btn-outline" id="btnExportPDF">PDF</button>
+                <button class="btn-outline" id="btnReset">リセット</button>
             </div>
         </div>
 
@@ -289,16 +288,20 @@
     </div>
 
     <script>
-        window.onload = () => {
+        'use strict'; // セキュリティ強化: Strictモードの有効化
+
+        document.addEventListener('DOMContentLoaded', () => {
             const today = new Date();
             const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
             const nextMonthLastDay = new Date(today.getFullYear(), today.getMonth() + 2, 0);
 
-            document.getElementById('startDate').value = firstDay.toISOString().split('T')[0];
-            document.getElementById('endDate').value = nextMonthLastDay.toISOString().split('T')[0];
-
+            const startDateInput = document.getElementById('startDate');
+            const endDateInput = document.getElementById('endDate');
             const amountInput = document.getElementById('totalAmount');
-            amountInput.value = formatRawValue(amountInput.value);
+
+            if (startDateInput) startDateInput.value = firstDay.toISOString().split('T')[0];
+            if (endDateInput) endDateInput.value = nextMonthLastDay.toISOString().split('T')[0];
+            if (amountInput) amountInput.value = formatRawValue(amountInput.value);
 
             amountInput.addEventListener('blur', (e) => {
                 e.target.value = formatRawValue(e.target.value);
@@ -307,18 +310,31 @@
             amountInput.addEventListener('focus', (e) => {
                 e.target.value = e.target.value.replace(/,/g, '');
             });
-        };
+
+            // セキュリティ強化: イベントリスナーによる安全なバインディング
+            document.getElementById('btnCalculate')?.addEventListener('click', calculate);
+            document.getElementById('btnExportCSV')?.addEventListener('click', exportCSV);
+            document.getElementById('btnExportPDF')?.addEventListener('click', exportPDF);
+            document.getElementById('btnReset')?.addEventListener('click', resetForm);
+        });
 
         function formatRawValue(val) {
-            let num = val.replace(/,/g, '');
+            // セキュリティ強化: 数値以外の不正な入力を弾く
+            let num = val.replace(/[^\d.-]/g, '');
             if (!isNaN(num) && num !== "") {
-                return Number(num).toLocaleString();
+                return Number(num).toLocaleString('ja-JP');
             }
-            return val;
+            return "";
         }
 
         function formatCurrency(num) {
-            return '¥' + Math.round(num).toLocaleString();
+            return '¥' + Math.round(num).toLocaleString('ja-JP');
+        }
+
+        function sanitizeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
         }
 
         function calculate() {
@@ -326,13 +342,13 @@
             const output = document.getElementById('resultOutput');
             const summary = document.getElementById('summaryArea');
 
-            const totalRaw = document.getElementById('totalAmount').value.replace(/,/g, '');
-            const total = parseFloat(totalRaw);
+            const totalAmountStr = document.getElementById('totalAmount').value.replace(/,/g, '');
+            const total = parseFloat(totalAmountStr);
             const startStr = document.getElementById('startDate').value;
             const endStr = document.getElementById('endDate').value;
 
             if (isNaN(total) || !startStr || !endStr) {
-                alert('金額と期間を入力してください');
+                alert('正しい金額と期間を入力してください');
                 return;
             }
 
@@ -391,9 +407,11 @@
                 results[results.length - 1].amount += diff;
             }
 
+            // テーブル要素の安全な構築 (createElementによるDOM生成)
             output.innerHTML = '';
             const table = document.createElement('table');
             const thead = document.createElement('thead');
+            // ヘッダーは固定値のため安全
             thead.innerHTML = '<tr><th>対象期間</th><th>単位</th><th class="amount-col">金額</th></tr>';
             table.appendChild(thead);
 
@@ -402,7 +420,7 @@
                 const tr = document.createElement('tr');
 
                 const tdPeriod = document.createElement('td');
-                tdPeriod.textContent = r.period;
+                tdPeriod.textContent = r.period; // textContentを使用してXSS防止
 
                 const tdLabel = document.createElement('td');
                 tdLabel.textContent = r.label;
@@ -432,14 +450,20 @@
             for (let i = 0; i < rows.length; i++) {
                 let row = [], cols = rows[i].querySelectorAll('td, th');
                 for (let j = 0; j < cols.length; j++) {
-                    // セキュリティ対策: 二重引用符をエスケープし、全体を引用符で囲む
                     let text = cols[j].textContent.replace('¥', '').replace(/,/g, '').replace(/"/g, '""');
+
+                    // セキュリティ強化: CSV（数式）インジェクション対策
+                    // =, +, -, @ から始まる場合はExcel等で数式として実行されるのを防ぐため、先頭に ' を付与
+                    if (/^[=+\-@]/.test(text)) {
+                        text = "'" + text;
+                    }
+
                     row.push('"' + text + '"');
                 }
                 csv.push(row.join(','));
             }
 
-            const csvContent = "\uFEFF" + csv.join('\n');
+            const csvContent = "\uFEFF" + csv.join('\n'); // BOM付きで文字化け防止
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement("a");
@@ -448,6 +472,7 @@
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url); // メモリリーク防止
         }
 
         async function exportPDF() {
@@ -463,13 +488,16 @@
                 html2canvas: {
                     scale: 2,
                     useCORS: true,
-                    backgroundColor: '#0f172a' // 背景色を維持
+                    backgroundColor: '#0f172a'
                 },
                 jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
             };
 
-            // PDF生成
-            html2pdf().set(options).from(element).save();
+            if (typeof html2pdf !== 'undefined') {
+                html2pdf().set(options).from(element).save();
+            } else {
+                alert('PDF生成ライブラリの読み込みに失敗しました。ページを再読み込みしてください。');
+            }
         }
 
         function resetForm() {
